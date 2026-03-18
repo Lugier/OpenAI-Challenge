@@ -62,6 +62,7 @@ MODEL_DIM=896 NUM_RECUR_STEPS=6 QUANT_MODE=int8
 MODEL_DIM=768 NUM_RECUR_STEPS=8 QUANT_MODE=mixed
 MIN_RECUR_STEPS=5 RECUR_WARMUP_STEPS=3000
 EVAL_RECUR_STEPS=9
+SMEAR_INIT=0.0
 BACKOUT_AFTER_DEPTH=4 BACKOUT_INIT=0.0
 FAKE_QUANT_BITS=8 FAKE_QUANT_START_STEP=12000
 FAKE_QUANT_BITS=4 FAKE_QUANT_START_STEP=14000 QUANT_MODE=mixed
@@ -70,6 +71,24 @@ MTP_HORIZONS=0
 FFN_MULT=2.5
 ```
 
+## Recommended first experiment order
+
+Do not turn on the more aggressive experimental levers immediately. The first useful sequence is:
+
+```bash
+1. Defaults only
+2. MTP_HORIZONS=0
+3. MIN_RECUR_STEPS=5 RECUR_WARMUP_STEPS=3000
+4. EVAL_RECUR_STEPS=9
+5. SMEAR_INIT=0.0
+```
+
+Why this order:
+
+- `MTP_HORIZONS=0` is the most important early control run because MTP is the easiest place to hide alignment and loss-normalization bugs.
+- `SMEAR_INIT=0.0` is worth testing explicitly; if Smear is neutral, it should be removed later to simplify the stack and save code bytes.
+- `EVAL_RECUR_STEPS` is an eval-only lever and should be tested after the main training path is known-good.
+
 ## Experimental notes for later agents
 
 These levers are intentionally integrated even though their payoff is not yet proven on this exact stack. They should be kept only if they win on real H100 A/B runs:
@@ -77,10 +96,13 @@ These levers are intentionally integrated even though their payoff is not yet pr
 - `FAKE_QUANT_BITS`
   - Why it may help: train-time exposure to the same kind of weight distortion introduced by the final compact artifact.
   - Why it may fail: can reduce optimization quality or slow the compiled path.
+  - When to enable it: only after the default run and the `MTP_HORIZONS=0` control run both complete cleanly.
   - What to measure:
     - `final_compact_roundtrip_exact val_bpb`
     - step time around and after `FAKE_QUANT_START_STEP`
     - final artifact size under `QUANT_MODE=mixed` or `int4`
+
+The current code path already gives the required post-training INT8 baseline automatically when `QUANT_MODE=int8`; that means no extra implementation is needed before measuring the pure post-training quantization hit.
 
 - `TTC_ENABLED`
   - Why it may help: the shared-depth model can exploit extra recurrent passes at eval time on uncertain tokens.
